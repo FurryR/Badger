@@ -1,0 +1,57 @@
+import { extern } from "builtin";
+import { daySince2000 } from "sb3:sensing";
+import { whenFlagClicked } from "sb3:event";
+
+unsafe async fn yield() -> void {
+  intrinsic "drop (extern translate_getTranslate(input WORDS=\"1\"))";
+}
+
+class Mutex<T> {
+  pub static unsafe from<T>(val: T) -> Mutex<T> {
+    return val as Mutex<T>
+  }
+  pub unsafe inline try_lock() -> boolean {
+    let lock_success = false
+    intrinsic `
+      lock_try this
+      mov l$is_locked, res
+    `
+    return lock_success
+  }
+  pub unsafe inline unlock() -> void {
+    intrinsic `
+      unlock this
+    `
+  }
+  pub unsafe inline async lock() -> void {
+    let lock_success = false
+    while (lock_success = this.try_lock()) {
+      await yield()
+    }
+  }
+  pub unsafe inline get() -> T {
+    return this as T
+  }
+  pub unsafe inline set(v: T) -> void {
+    this = v as Mutex<T>
+  }
+}
+
+@extern("fps")
+let fpsDisplay = Mutex.from('');
+
+@extern("Test FPS [v]")
+export async fn calculateFPS(v: number = daySince2000()) -> number {
+  await yield();
+  return daySince2000() - v;
+}
+
+@whenFlagClicked
+async fn greenFlag() -> void {
+  loop {
+    await fpsDisplay.lock();
+    const fps = await calculateFPS();
+    fpsDisplay.set("FPS: " + fps);
+    fpsDisplay.unlock();
+  }
+}
