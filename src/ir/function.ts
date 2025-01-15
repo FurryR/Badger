@@ -1,8 +1,17 @@
+// Early development, do not use IR for now.
+
 import {
+  BinaryExpressionNode,
+  CallExpressionNode,
+  ExpressionNode,
+  ExpressionStatementNode,
+  LiteralNode,
   NoopNode,
+  VariableReferenceNode,
   type FunctionDeclarationNode
 } from 'src/parser/ast'
 import * as IR from './instruction'
+import { Message, Warning } from 'src/parser/message'
 
 export function parseLiteral(literal: string): string | number {
   if (/\d/.test(literal[0])) {
@@ -96,62 +105,146 @@ export function parseLiteral(literal: string): string | number {
   return str // 如果没有找到结束引号，返回当前字符串
 }
 
-export class Scope {
-  private map = new Map<string, number>()
-  get(name: string): IR.GlobalVariable | IR.LocalVariable | null {
-    const v = this.map.get(name)
-    if (v !== undefined)
-      return this.parent
-        ? new IR.LocalVariable(name)
-        : new IR.GlobalVariable(name)
-    if (this.parent) return this.parent.get(name)
-    return null
-  }
-  create(name: string): IR.GlobalVariable | IR.LocalVariable {
-    if (this.map.has(name))
-      throw new Error(`Already defined ${name} in this scope.`)
-    const req = this.require()
-    this.map.set(name, req)
-    return this.parent
-      ? new IR.LocalVariable(name)
-      : new IR.GlobalVariable(name)
-  }
-  dispose() {
-    for (const v of this.map.values()) {
-      this.free(v)
-    }
-  }
-  constructor(
-    public parent: Scope | null,
-    private require: () => number,
-    private free: (local: number) => void
-  ) {}
+class ExpressionRange {
+  constructor(public start: number, public end: number) {}
 }
 export class IRFunction {
   public program: IR.Command[] = []
+  // TODO: result type
+  // TODO: generic parameter
   private _usedLocals: number = 0
+  public messages: Message[] = []
   private _freeLocals: number[] = []
-  private requireLocal(): number {
-    return this._freeLocals.pop() ?? this._usedLocals++
+  private requireLocal(): IR.LocalVariable {
+    return new IR.LocalVariable(this._freeLocals.pop() ?? this._usedLocals++)
   }
-  private freeLocal(local: number) {
-    if (!this._freeLocals.includes(local)) {
-      this._freeLocals.push(local)
+  private freeLocal(local: IR.LocalVariable) {
+    if (!this._freeLocals.includes(local.index)) {
+      this._freeLocals.push(local.index)
     }
   }
-  public parse(parentScope?: Scope) {
-    const scope = new Scope(
-      parentScope ?? this.globalScope,
-      this.requireLocal.bind(this),
-      this.freeLocal.bind(this)
-    )
+  get locals(): number {
+    return this._usedLocals
+  }
+  private evaluate(expr: ExpressionNode): IR.Value | IR.Command[] {
+    if (expr instanceof LiteralNode) {
+      return new IR.Literal(parseLiteral(expr.value.value))
+    } else if (expr instanceof BinaryExpressionNode) {
+      const lhs = this.evaluate(expr.left)
+      const rhs = this.evaluate(expr.right)
+      const map = new Map([
+        ['+', IR.Add],
+        ['-', IR.Sub],
+        ['*', IR.Mul],
+        ['/', IR.Div],
+        ['%', IR.Mod]
+      ])
+      const cmd = map.get(expr.operator.value)
+      if (!cmd) throw new Error('Not implemented')
+      if (lhs instanceof IR.Value && rhs instanceof IR.Value) {
+        return [new cmd(lhs, rhs)]
+      } else if (lhs instanceof IR.Value && Array.isArray(rhs)) {
+        return [...rhs, new cmd(lhs, new IR.ReturnResult())]
+      } else if (rhs instanceof IR.Value && Array.isArray(lhs)) {
+        return [...lhs, new cmd(new IR.ReturnResult(), rhs)]
+      } else if (Array.isArray(lhs) && Array.isArray(rhs)) {
+        const lhsLocal = this.requireLocal()
+        const code = [
+          ...lhs,
+          new IR.Assign(lhsLocal, new IR.ReturnResult()),
+          ...rhs,
+          new cmd(lhsLocal, new IR.ReturnResult())
+        ]
+        this.freeLocal(lhsLocal)
+        return code
+      }
+      throw new Error('Unreachable')
+    } else if (expr instanceof CallExpressionNode) {
+      if (
+        expr.callee instanceof VariableReferenceNode &&
+        expr.callee.name.value === 'test'
+      ) {
+        const evaluateCmd = []
+        const args: IR.Value[] = []
+        const evaluated = expr.args.map(arg => this.evaluate(arg))
+        for (const [index, arg] of evaluated.entries()) {
+          if (arg instanceof IR.Value) {
+            args.push(arg)
+            continue
+          } else if (
+            evaluated.slice(index + 1).every(v => v instanceof IR.Value)
+          ) {
+            evaluateCmd.push(...arg)
+            args.push(new IR.ReturnResult())
+          } else {
+            const local = this.requireLocal()
+            evaluateCmd.push(
+              ...arg,
+              new IR.Assign(local, new IR.ReturnResult())
+            )
+            args.push(local)
+          }
+        }
+        const result = [...evaluateCmd, new IR.Call('test', args)]
+        for (const local of args) {
+          if (local instanceof IR.LocalVariable) this.freeLocal(local)
+        }
+        return result
+      } else {
+        throw new Error('Not implemented')
+      }
+    }
+    throw new Error('Not implemented')
+  }
+  private expressionRange(expr: ExpressionNode): ExpressionRange {
+    if (expr instanceof LiteralNode) {
+      return new ExpressionRange(expr.value.start, expr.value.end)
+    } else if (expr instanceof BinaryExpressionNode) {
+      // return [
+      //   this.expressionRange(expr.left)[0],
+      //   expr.right.value.end
+      // ]
+      return new ExpressionRange(
+        this.expressionRange(expr.left).start,
+        this.expressionRange(expr.right).end
+      )
+    } else if (expr instanceof CallExpressionNode) {
+      return new ExpressionRange(
+        this.expressionRange(expr.callee).start,
+        this.expressionRange(expr.args[expr.args.length - 1]).end + 1
+      )
+    }
+    throw new Error('Not implemented')
+  }
+  public parse() {
+    // const scope = new Scope(
+    //   parentScope ?? this.globalScope,
+    //   this.requireLocal.bind(this),
+    //   this.freeLocal.bind(this)
+    // )
     for (const cmd of this.fn.body) {
       if (cmd instanceof NoopNode) continue
+      if (cmd instanceof ExpressionStatementNode) {
+        const v = this.evaluate(cmd.value)
+        if (v instanceof IR.Value) {
+          const range = this.expressionRange(cmd.value)
+          this.messages.push(
+            new Warning(range.start, range.end, 'Expression has no effect.')
+          )
+        } else {
+          this.program.push(...v)
+        }
+      }
     }
-    scope.dispose()
+    // scope.dispose()
+  }
+  toString() {
+    return `fn ${this.fn.name.value}(${this.locals}) {\n${this.program
+      .map(v => v.toString())
+      .join('\n')}\n}`
   }
   constructor(
-    private globalScope: Scope,
+    // private globalScope: Scope,
     private fn: FunctionDeclarationNode
   ) {}
 }

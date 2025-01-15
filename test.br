@@ -13,27 +13,27 @@ class Mutex<T> {
   pub unsafe inline try_lock() -> boolean {
     let lock_success = false
     intrinsic `
-      lock_try this
+      lock_try self
       mov l$is_locked, res
     `
     return lock_success
   }
   pub unsafe inline unlock() -> void {
     intrinsic `
-      unlock this
+      unlock self
     `
   }
   pub unsafe inline async lock() -> void {
     let lock_success = false
-    while (lock_success = this.try_lock()) {
+    while (lock_success = self.try_lock()) {
       await yield()
     }
   }
   pub unsafe inline get() -> T {
-    return this as T
+    return self as T
   }
   pub unsafe inline set(v: T) -> void {
-    this = v as Mutex<T>
+    self = v as Mutex<T>
   }
 }
 

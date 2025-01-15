@@ -129,26 +129,26 @@ export class GlobalVariable extends VarReference {
 }
 
 /**
- * Local variable.
+ * Local variable. If the syntax is `l$variable_name`, it should be parsed into `l0`, etc.
  */
 export class LocalVariable extends VarReference {
-  constructor(public name: string) {
+  constructor(public index: number) {
     super()
   }
   toString(): string {
-    return `l$${this.name}`
+    return `l${this.index}`
   }
 }
 
 /**
  * Class instance. This register is writable in inline member functions.
  */
-export class ThisVariable extends VarReference {
+export class SelfVariable extends VarReference {
   constructor() {
     super()
   }
   toString(): string {
-    return 'this'
+    return 'self'
   }
 }
 /**
@@ -277,27 +277,27 @@ export class ExternalReporter extends Value {
  * }
  * ```
  */
-export class Addition extends BinaryOperation {
+export class Add extends BinaryOperation {
   toString(): string {
     return `add ${this.lhs.toString()}, ${this.rhs.toString()}`
   }
 }
-export class Subtract extends BinaryOperation {
+export class Sub extends BinaryOperation {
   toString(): string {
     return `sub ${super.toString()}`
   }
 }
-export class Multiply extends BinaryOperation {
+export class Mul extends BinaryOperation {
   toString(): string {
     return `mul ${super.toString()}`
   }
 }
-export class Division extends BinaryOperation {
+export class Div extends BinaryOperation {
   toString(): string {
     return `div ${super.toString()}`
   }
 }
-export class Modulus extends BinaryOperation {
+export class Mod extends BinaryOperation {
   toString(): string {
     return `mod ${super.toString()}`
   }
@@ -344,9 +344,25 @@ export class LogicGt extends BinaryOperation {
     return `gt ${super.toString()}`
   }
 }
+export class LogicGe extends BinaryOperation {
+  toString(): string {
+    return `ge ${super.toString()}`
+  }
+}
+export class LogicLe extends BinaryOperation {
+  toString(): string {
+    return `le ${super.toString()}`
+  }
+}
 export class LogicEq extends BinaryOperation {
   toString(): string {
     return `eq ${super.toString()}`
+  }
+}
+
+export class LogicNe extends BinaryOperation {
+  toString(): string {
+    return `ne ${super.toString()}`
   }
 }
 

@@ -104,6 +104,7 @@ export class Parser {
       return new NoopNode()
     } else if (
       this.check(TokenType.Identifier, TokenType.Operator) ||
+      this.check(TokenType.Literal) ||
       this.checkKeyword('await')
     ) {
       return new ExpressionStatementNode(this.expression())
@@ -792,7 +793,7 @@ export class Parser {
         const args: ExpressionNode[] = []
         if (!this.checkOperator(')')) {
           do {
-            args.push(this.expression())
+            args.push(this.expression(true))
           } while (this.matchOperator(','))
         }
         this.consumeOperator(')', "Expect ')' after arguments.")

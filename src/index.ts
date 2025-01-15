@@ -1,6 +1,8 @@
-import { readFileSync, writeFileSync } from 'fs'
+// import { readFileSync, writeFileSync } from 'fs'
+import { IRFunction } from './ir/function'
+import { FunctionDeclarationNode } from './parser/ast'
 import { Lexer } from './parser/lexer'
-import { Warning } from './parser/message'
+import { Message, Warning } from './parser/message'
 import { Parser } from './parser/parser'
 
 export * as Lexer from './parser/lexer'
@@ -9,7 +11,7 @@ export * as AST from './parser/ast'
 export * as Message from './parser/message'
 
 // 示例代码
-const code = readFileSync('./test.br').toString('utf-8')
+// const code = readFileSync('./test.br').toString('utf-8')
 
 export function getLine(
   text: string,
@@ -17,7 +19,7 @@ export function getLine(
   endIndex: number
 ): [number, number, number, number, string] {
   // 定义高亮的 ANSI 颜色码
-  const highlightStart = '\x1b[31m' // 红色
+  const highlightStart = '\x1b[31;4m' // 红色和下划线
   const highlightEnd = '\x1b[0m' // 重置颜色
 
   // 确保索引在文本范围内
@@ -43,46 +45,51 @@ export function getLine(
   // 提取出这一行的文本
   const lineText = text.substring(startLineIndex, lineEndIndex)
 
-  // 提取出选中的部分
-  const selectedText = text.substring(startIndex, endIndex)
-
   // 用高亮的文本替换选中的部分
-  const highlightedLine = lineText.replace(
-    selectedText,
-    `${highlightStart}${selectedText}${highlightEnd}`
-  )
+  const highlightedLine =
+    lineText.substring(0, startCol) +
+    highlightStart +
+    lineText.substring(startCol, endCol) +
+    highlightEnd +
+    lineText.substring(endCol)
 
   return [startLine, startCol, endLine, endCol, highlightedLine]
 }
 
+function showMessages(messages: Message[]) {
+  for (const v of messages) {
+    const line = getLine(code, v.start, v.end)
+    ;(v instanceof Warning ? console.warn : console.error)(
+      `<input>:${line[0] + 1}:${line[1] + 1} - <input>:${line[2] + 1}:${
+        line[3] + 1
+      } ${v.message}`
+    )
+    console.group()
+    console.log(line[4])
+    console.groupEnd()
+  }
+}
+
 // 词法分析
+const code = `
+fn main() -> void {
+  test(1 / (2 + test() * test()) - 5, test(), 1);
+}
+`
 const lexer = new Lexer(code)
 lexer.tokenize()
 const parser = new Parser(lexer.tokens)
 parser.parse()
 
-for (const v of lexer.messages) {
-  const line = getLine(code, v.start, v.end)
-  ;(v instanceof Warning ? console.warn : console.error)(
-    `./test.br:${line[0] + 1}:${line[1] + 1} - ./test.br:${line[2] + 1}:${
-      line[3] + 1
-    } ${v.message}`
-  )
-  console.group()
-  console.log(line[4])
-  console.groupEnd()
-}
-for (const v of parser.messages) {
-  const line = getLine(code, v.start, v.end)
-  ;(v instanceof Warning ? console.warn : console.error)(
-    `./test.br:${line[0] + 1}:${line[1] + 1} - ./test.br:${line[2] + 1}:${
-      line[3] + 1
-    } ${v.message}`
-  )
-  console.group()
-  console.log(line[4])
-  console.groupEnd()
-}
+showMessages(lexer.messages)
+showMessages(parser.messages)
 
-writeFileSync('./ast.json', JSON.stringify(parser.program, null, 2))
-console.log(parser.program.toString())
+// writeFileSync('./ast.json', JSON.stringify(parser.program, null, 2))
+console.log(code)
+const fn = parser.program.statements[0] as FunctionDeclarationNode
+const ir = new IRFunction(fn)
+ir.parse()
+showMessages(ir.messages)
+console.log(ir.toString())
+
+// console.log(parser.program.toString())
